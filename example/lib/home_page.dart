@@ -71,9 +71,9 @@ class _HomePageState extends State<HomePage> {
                   overlayContent: 'Overlay Enabled',
                   flag: OverlayFlag.defaultFlag,
                   visibility: NotificationVisibility.visibilityPublic,
-                  positionGravity: PositionGravity.left,
-                  height: (MediaQuery.of(context).size.height * 0.6).toInt(),
-                  width: WindowSize.matchParent,
+                  positionGravity: PositionGravity.auto,
+                  height: 250,
+                  width: 250,
                   startPosition: const OverlayPosition(0, -259),
                 );
               },
