@@ -264,7 +264,77 @@ public class OverlayService extends Service implements View.OnTouchListener {
         int topBound = statusBarHeight; // Account for status bar
         int bottomBound = screenHeight - navigationBarHeight; // Account for navigation bar
         
+        
         return new int[]{leftBound, topBound, rightBound, bottomBound};
+    }
+    
+    /**
+     * Apply soft boundary constraints during dragging - allows more freedom while keeping overlay visible
+     */
+    private void applySoftBoundaryConstraints(WindowManager.LayoutParams params, int overlayWidth, int overlayHeight) {
+        int[] bounds = getSafeBoundaries();
+        int leftBound = bounds[0];
+        int topBound = bounds[1]; 
+        int rightBound = bounds[2];
+        int bottomBound = bounds[3];
+        
+        // During dragging, allow the overlay to go partially off-screen but keep at least 20% visible
+        int minVisibleWidth = Math.max(overlayWidth / 5, 20); // At least 20% or 20px visible
+        int minVisibleHeight = Math.max(overlayHeight / 5, 20); // At least 20% or 20px visible
+        
+        if ((WindowSetup.gravity & Gravity.RIGHT) == Gravity.RIGHT) {
+            // Right-based coordinate system - allow going off left edge but keep right edge visible
+            int maxLeftOffset = rightBound - minVisibleWidth;
+            int originalX = params.x;
+            params.x = Math.max(maxLeftOffset, params.x);
+            if (originalX != params.x) {
+                Log.d("OverlayService", "SOFT RIGHT gravity: X constrained from " + originalX + " to " + params.x);
+            }
+        } else if ((WindowSetup.gravity & Gravity.LEFT) == Gravity.LEFT) {
+            // Left-based coordinate system - allow going off right edge but keep left edge visible
+            int maxRightOffset = leftBound + overlayWidth - minVisibleWidth;
+            int originalX = params.x;
+            params.x = Math.min(maxRightOffset, params.x);
+            if (originalX != params.x) {
+                Log.d("OverlayService", "SOFT LEFT gravity: X constrained from " + originalX + " to " + params.x);
+            }
+        } else {
+            // Center-based coordinate system - allow going off edges but keep center visible
+            int maxLeftOffset = leftBound - (szWindow.x / 2) + minVisibleWidth;
+            int maxRightOffset = rightBound - (szWindow.x / 2) - (overlayWidth - minVisibleWidth);
+            int originalX = params.x;
+            params.x = Math.max(maxLeftOffset, Math.min(params.x, maxRightOffset));
+            if (originalX != params.x) {
+                Log.d("OverlayService", "SOFT CENTER gravity: X constrained from " + originalX + " to " + params.x);
+            }
+        }
+        
+        if ((WindowSetup.gravity & Gravity.BOTTOM) == Gravity.BOTTOM) {
+            // Bottom-based coordinate system - allow going off top edge but keep bottom edge visible
+            int maxTopOffset = bottomBound - minVisibleHeight;
+            int originalY = params.y;
+            params.y = Math.max(maxTopOffset, params.y);
+            if (originalY != params.y) {
+                Log.d("OverlayService", "SOFT BOTTOM gravity: Y constrained from " + originalY + " to " + params.y);
+            }
+        } else if ((WindowSetup.gravity & Gravity.TOP) == Gravity.TOP) {
+            // Top-based coordinate system - allow going off bottom edge but keep top edge visible
+            int maxBottomOffset = topBound + overlayHeight - minVisibleHeight;
+            int originalY = params.y;
+            params.y = Math.min(maxBottomOffset, params.y);
+            if (originalY != params.y) {
+                Log.d("OverlayService", "SOFT TOP gravity: Y constrained from " + originalY + " to " + params.y);
+            }
+        } else {
+            // Center-based coordinate system - allow going off edges but keep center visible
+            int maxTopOffset = topBound - (szWindow.y / 2) + minVisibleHeight;
+            int maxBottomOffset = bottomBound - (szWindow.y / 2) - (overlayHeight - minVisibleHeight);
+            int originalY = params.y;
+            params.y = Math.max(maxTopOffset, Math.min(params.y, maxBottomOffset));
+            if (originalY != params.y) {
+                Log.d("OverlayService", "SOFT CENTER gravity: Y constrained from " + originalY + " to " + params.y);
+            }
+        }
     }
     
     /**
@@ -279,28 +349,62 @@ public class OverlayService extends Service implements View.OnTouchListener {
         
         if ((WindowSetup.gravity & Gravity.RIGHT) == Gravity.RIGHT) {
             // Right-based coordinate system
+            // params.x is offset from right edge, 0 = right edge, positive = left of right edge
+            int originalX = params.x;
             params.x = Math.max(0, Math.min(params.x, rightBound - overlayWidth));
+            if (originalX != params.x) {
+                Log.d("OverlayService", "RIGHT gravity: X constrained from " + originalX + " to " + params.x);
+            }
         } else if ((WindowSetup.gravity & Gravity.LEFT) == Gravity.LEFT) {
             // Left-based coordinate system  
+            // params.x is offset from left edge, 0 = left edge, positive = right of left edge
+            int originalX = params.x;
             params.x = Math.max(leftBound, Math.min(params.x, rightBound - overlayWidth));
+            if (originalX != params.x) {
+                Log.d("OverlayService", "LEFT gravity: X constrained from " + originalX + " to " + params.x);
+            }
         } else {
             // Center-based coordinate system
-            int maxLeftOffset = -(rightBound / 2) + leftBound;
-            int maxRightOffset = (rightBound / 2) - overlayWidth;
-            params.x = Math.max(maxLeftOffset, Math.min(params.x, maxRightOffset));
+            // params.x is offset of window's center from screen's center
+            // Ensure window's left edge >= leftBound and right edge <= rightBound
+            int originalX = params.x;
+            int minX_center_offset = leftBound - (szWindow.x / 2) + (overlayWidth / 2);
+            int maxX_center_offset = rightBound - (szWindow.x / 2) - (overlayWidth / 2);
+            params.x = Math.max(minX_center_offset, Math.min(params.x, maxX_center_offset));
+            if (originalX != params.x) {
+                Log.d("OverlayService", "CENTER gravity: X constrained from " + originalX + " to " + params.x + 
+                      " (min: " + minX_center_offset + ", max: " + maxX_center_offset + ")");
+            }
         }
         
         if ((WindowSetup.gravity & Gravity.BOTTOM) == Gravity.BOTTOM) {
             // Bottom-based coordinate system
+            // params.y is offset from bottom edge, 0 = bottom edge, positive = above bottom edge
+            int originalY = params.y;
             params.y = Math.max(0, Math.min(params.y, bottomBound - overlayHeight));
+            if (originalY != params.y) {
+                Log.d("OverlayService", "BOTTOM gravity: Y constrained from " + originalY + " to " + params.y);
+            }
         } else if ((WindowSetup.gravity & Gravity.TOP) == Gravity.TOP) {
             // Top-based coordinate system
+            // params.y is offset from top edge, 0 = top edge, positive = below top edge
+            int originalY = params.y;
             params.y = Math.max(topBound, Math.min(params.y, bottomBound - overlayHeight));
+            if (originalY != params.y) {
+                Log.d("OverlayService", "TOP gravity: Y constrained from " + originalY + " to " + params.y);
+            }
         } else {
             // Center-based coordinate system  
-            int maxTopOffset = -(bottomBound / 2) + topBound;
-            int maxBottomOffset = (bottomBound / 2) - overlayHeight;
-            params.y = Math.max(maxTopOffset, Math.min(params.y, maxBottomOffset));
+            // params.y is offset of window's center from screen's center
+            // Ensure window's top edge >= topBound and bottom edge <= bottomBound
+            int originalY = params.y;
+            int minY_center_offset = topBound - (szWindow.y / 2) + (overlayHeight / 2);
+            int maxY_center_offset = bottomBound - (szWindow.y / 2) - (overlayHeight / 2);
+            params.y = Math.max(minY_center_offset, Math.min(params.y, maxY_center_offset));
+            if (originalY != params.y) {
+                Log.d("OverlayService", "CENTER gravity: Y constrained from " + originalY + " to " + params.y + 
+                      " (min: " + minY_center_offset + ", max: " + maxY_center_offset + ")");
+            }
         }
     }
 
@@ -472,6 +576,16 @@ public class OverlayService extends Service implements View.OnTouchListener {
         WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
+                // Cancel any ongoing tray animation to prevent interference
+                if (mTrayAnimationTimer != null) {
+                    mTrayAnimationTimer.cancel();
+                    mTrayAnimationTimer = null;
+                }
+                if (mTrayTimerTask != null) {
+                    mTrayTimerTask.cancel();
+                    mTrayTimerTask = null;
+                }
+                
                 dragging = false;
                 lastX = event.getRawX();
                 lastY = event.getRawY();
@@ -490,14 +604,17 @@ public class OverlayService extends Service implements View.OnTouchListener {
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 lastYPosition = params.y;
+                boolean wasDragging = dragging;
+                dragging = false;  // Reset dragging state for next touch sequence
+                
                 if (WindowSetup.positionGravity.equals("none")) {
-                    return false;
+                    return wasDragging;
                 }
 
                 if (windowManager != null) {
                     startTrayAnimation(params);
                 }
-                return dragging;
+                return wasDragging;
         }
         return false;
     }
@@ -511,12 +628,24 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 || WindowSetup.gravity == Gravity.BOTTOM
                 || WindowSetup.gravity == (Gravity.BOTTOM | Gravity.RIGHT);
 
+        // Log initial position before movement
+        Log.d("OverlayService", "Drag movement - dx: " + dx + ", dy: " + dy + 
+              ", gravity: " + WindowSetup.gravity + ", invertX: " + invertX + ", invertY: " + invertY);
+
         // Apply movement
+        int oldX = params.x;
+        int oldY = params.y;
         params.x += ((int) dx * (invertX ? -1 : 1));
         params.y += ((int) dy * (invertY ? -1 : 1));
         
-        // Apply safe boundary constraints that respect status bar and navigation bar
-        constrainToSafeBoundaries(params, flutterView.getWidth(), flutterView.getHeight());
+        Log.d("OverlayService", "Position after movement - X: " + oldX + " -> " + params.x + 
+              ", Y: " + oldY + " -> " + params.y);
+        
+        // During dragging, only apply soft constraints to prevent going completely off-screen
+        // This allows free movement while keeping the overlay partially visible
+        applySoftBoundaryConstraints(params, flutterView.getWidth(), flutterView.getHeight());
+        
+        Log.d("OverlayService", "Position after soft constraints - X: " + params.x + ", Y: " + params.y);
 
         if (windowManager != null) {
             windowManager.updateViewLayout(flutterView, params);
@@ -571,28 +700,37 @@ public class OverlayService extends Service implements View.OnTouchListener {
             } else {
                 // Center-based coordinate system: x=0 is center of screen
                 // Calculate positions within safe boundaries
-                leftEdgeX = -(rightBound / 2) + leftBound;    // Left edge (safe area)
-                rightEdgeX = (rightBound / 2) - overlayWidth; // Right edge (safe area)
+                int screenCenterX = szWindow.x / 2;
+                // For left edge: overlay's center should be at leftBound + overlayWidth/2
+                leftEdgeX = (leftBound + overlayWidth / 2) - screenCenterX;
+                // For right edge: overlay's center should be at rightBound - overlayWidth/2  
+                rightEdgeX = (rightBound - overlayWidth / 2) - screenCenterX;
             }
             
             switch (WindowSetup.positionGravity) {
                 case "auto":
                     // For auto, choose left or right based on current position
-                    int currentCenterX;
+                    int currentAbsoluteX;
                     if ((WindowSetup.gravity & Gravity.RIGHT) == Gravity.RIGHT) {
                         // In right-based system, convert to absolute position
-                        currentCenterX = rightBound - params.x - (overlayWidth / 2);
+                        currentAbsoluteX = rightBound - params.x - (overlayWidth / 2);
                     } else if ((WindowSetup.gravity & Gravity.LEFT) == Gravity.LEFT) {
                         // In left-based system, convert to absolute position
-                        currentCenterX = params.x + (overlayWidth / 2);
+                        currentAbsoluteX = params.x + (overlayWidth / 2);
                     } else {
-                        // In center-based system, params.x is already relative to center
-                        currentCenterX = params.x;
+                        // In center-based system, convert params.x (offset from screen center) to absolute position
+                        int screenCenterX = szWindow.x / 2;
+                        currentAbsoluteX = screenCenterX + params.x;
                     }
                     
-                    // Choose left if center is on left half of safe area, right otherwise
-                    boolean isOnLeftSide = currentCenterX <= (leftBound + rightBound) / 2;
+                    // Choose left if overlay center is on left half of safe area, right otherwise
+                    int safeAreaCenterX = (leftBound + rightBound) / 2;
+                    boolean isOnLeftSide = currentAbsoluteX <= safeAreaCenterX;
                     mDestX = isOnLeftSide ? leftEdgeX : rightEdgeX;
+                    
+                    Log.d("OverlayService", "Auto positioning - currentAbsoluteX: " + currentAbsoluteX + 
+                          ", safeAreaCenterX: " + safeAreaCenterX + ", isOnLeftSide: " + isOnLeftSide + 
+                          ", leftEdgeX: " + leftEdgeX + ", rightEdgeX: " + rightEdgeX + ", destX: " + mDestX);
                     break;
                 case "left":
                     mDestX = leftEdgeX;
@@ -614,7 +752,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 params.x = (int)((params.x - mDestX) / mAnimationSpeed) + mDestX;
                 params.y = (int)((params.y - mDestY) / mAnimationSpeed) + mDestY;
 
-                // Apply safe boundary constraints during animation
+                // Apply safe boundary constraints during animation to ensure final position is within bounds
                 constrainToSafeBoundaries(params, flutterView.getWidth(), flutterView.getHeight());
 
                 if (windowManager != null) {
